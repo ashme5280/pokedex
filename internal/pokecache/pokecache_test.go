@@ -2,10 +2,11 @@ package pokecache
 
 import (
 	"testing"
+	"time"
 )
 
 func TestAddGet(t *testing.T) {
-	cache := NewCache()
+	cache := NewCache(time.Minute)
 
 	key := "https://example.com"
 	val := []byte("testdata")
@@ -22,7 +23,7 @@ func TestAddGet(t *testing.T) {
 }
 
 func TestAddGetMissing(t *testing.T) {
-	cache := NewCache()
+	cache := NewCache(time.Minute)
 
 	_, exists := cache.Get("nonexistent")
 	if exists {
@@ -30,18 +31,18 @@ func TestAddGetMissing(t *testing.T) {
 	}
 }
 
-func TestReassign(t *testing.T) {
-	cache := NewCache()
+func TestReaping(t *testing.T) {
+	interval := 5 * time.Millisecond
+	cache := NewCache(interval)
 
 	key := "https://example.com"
-	cache.Add(key, []byte("first"))
-	cache.Add(key, []byte("second"))
+	cache.Add(key, []byte("testdata"))
 
-	got, exists := cache.Get(key)
-	if !exists {
-		t.Errorf("expected to find key %s", key)
-	}
-	if string(got) != "second" {
-		t.Errorf("expected 'second', got %s", string(got))
+	// Allow time for the ticker to tick and reap the item
+	time.Sleep(interval + 10*time.Millisecond)
+
+	_, exists := cache.Get(key)
+	if exists {
+		t.Errorf("expected key to be reaped and not exist")
 	}
 }
