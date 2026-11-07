@@ -2,32 +2,36 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
-	"encoding/json"
-	"net/http"
+
+	"github.com/ashme5280/pokedex/internal/pokecache"
 )
 
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(*config) error // Fixed typo (removed 'chno ')
+	callback    func(*config) error
 }
 
 type config struct {
 	commands map[string]cliCommand
-	nextURL	*string
-	prevURL *string
+	nextURL  *string
+	prevURL  *string
+	cache    pokecache.Cache
 }
 
 type RespLocations struct {
-	Count int `json:"count"`
-	Next *string `json:"next"`
+	Count    int     `json:"count"`
+	Next     *string `json:"next"`
 	Previous *string `json:"previous"`
-	Results []struct {
-		Name string `json:"name"` // Must be lowercase "name" to match PokeAPI JSON
-		URL string `json:"url"`
+	Results  []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
 	} `json:"results"`
 }
 
@@ -64,16 +68,15 @@ func startRepl(cfg *config) {
 			break
 		}
 
-		words := cleanInput(scanner.Text()) // Added missing parentheses ()
+		words := cleanInput(scanner.Text())
 		if len(words) == 0 {
 			continue
 		}
 
 		commandName := words[0]
 
-		// Look up command in registry from the config struct
-		if cmd, exists := cfg.commands[commandName]; exists { // Changed commands -> cfg.commands
-			err := cmd.callback(cfg) // Pass cfg into the callback
+		if cmd, exists := cfg.commands[commandName]; exists {
+			err := cmd.callback(cfg)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -113,25 +116,45 @@ func callbackMap(cfg *config) error {
 		url = *cfg.nextURL
 	}
 
-	// 1. Make the GET request
+	// 1. Check the cache first
+	if val, ok := cfg.cache.Get(url); ok {
+		var locationResp RespLocations
+		if err := json.Unmarshal(val, &locationResp); err != nil {
+			return err
+		}
+		cfg.nextURL = locationResp.Next
+		cfg.prevURL = locationResp.Previous
+
+		for _, loc := range locationResp.Results {
+			fmt.Println(loc.Name)
+		}
+		return nil
+	}
+
+	// 2. If miss, fetch from API
 	res, err := http.Get(url)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 
-	// 2. Decode the JSON response
-	var locationResp RespLocations
-	decoder := json.NewDecoder(res.Body)
-	if err := decoder.Decode(&locationResp); err != nil {
+	dat, err := io.ReadAll(res.Body)
+	if err != nil {
 		return err
 	}
 
-	// 3. Update pagination URLs in config
+	// 3. Save to cache
+	cfg.cache.Add(url, dat)
+
+	// 4. Decode and print
+	var locationResp RespLocations
+	if err := json.Unmarshal(dat, &locationResp); err != nil {
+		return err
+	}
+
 	cfg.nextURL = locationResp.Next
 	cfg.prevURL = locationResp.Previous
 
-	// 4. Print the location area names
 	for _, loc := range locationResp.Results {
 		fmt.Println(loc.Name)
 	}
@@ -145,15 +168,41 @@ func callbackMapb(cfg *config) error {
 		return nil
 	}
 
-	res, err := http.Get(*cfg.prevURL)
+	url := *cfg.prevURL
+
+	// 1. Check cache first for mapb
+	if val, ok := cfg.cache.Get(url); ok {
+		var locationResp RespLocations
+		if err := json.Unmarshal(val, &locationResp); err != nil {
+			return err
+		}
+		cfg.nextURL = locationResp.Next
+		cfg.prevURL = locationResp.Previous
+
+		for _, loc := range locationResp.Results {
+			fmt.Println(loc.Name)
+		}
+		return nil
+	}
+
+	// 2. If miss, fetch from API
+	res, err := http.Get(url)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 
+	dat, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+
+	// 3. Save to cache
+	cfg.cache.Add(url, dat)
+
+	// 4. Decode and print
 	var locationResp RespLocations
-	decoder := json.NewDecoder(res.Body)
-	if err := decoder.Decode(&locationResp); err != nil {
+	if err := json.Unmarshal(dat, &locationResp); err != nil {
 		return err
 	}
 

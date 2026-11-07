@@ -1,8 +1,15 @@
 package main
 
+import (
+	"time"
+
+	"github.com/ashme5280/pokedex/internal/pokecache" // Added missing import
+)
+
 func main() {
     cfg := &config{
-        commands: map[string]cliCommand{
+    	cache: pokecache.NewCache(5 * time.Minute),
+    	commands: map[string]cliCommand{
             "help": {
                 name:        "help",
                 description: "Displays a help message",
