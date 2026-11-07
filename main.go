@@ -8,8 +8,9 @@ import (
 
 func main() {
 	cfg := &config{
-		cache:    pokecache.NewCache(5 * time.Minute),
-		commands: getCommands(),
+		cache:         pokecache.NewCache(5 * time.Minute),
+		commands:      getCommands(),
+		caughtPokemon: make(map[string]Pokemon), // Initialize here
 	}
 
 	startRepl(cfg)
